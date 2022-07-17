@@ -104,7 +104,7 @@ void loop() {
 //  Isalarm();
   timedisplay(0);
   delay(1000);
-//  WMode(0);
+  WMode(0);
 //  delay(50);
 
 }
