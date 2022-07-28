@@ -1,3 +1,23 @@
+/*
+
+PINOUT: 
+ *        _________________________________________________________________________________________
+ *       |  ARDUINO UNO    >>>    HX711   |    DS3231   |   I2C LCD   |    HC - 05    |  Buzzer   |
+ *        -----------------------------------------------------------------------------------------
+ *            GND          >>>    GND           GND           GND           GND            piezo -
+ *           GPIO 7        >>>    SCK            -             -             -               -
+ *           GPIO 6        >>>    DT             -             -             -               -
+ *            5V           >>>    VCC            5V            5V            5V              -
+ *            A4           >>>     -             SDA           SDA           -               -
+ *            A5           >>>     -             SCK           SCK           -               -
+ *          GPIO 4         >>>     -             -             -           STATE             - 
+ *          GPIO 3 (TX)    >>>     -             -             -            RX               - 
+ *          GPIO 2 (RX)    >>>     -             -             -            TX               - 
+ *          GPIO 5         >>>     -             -             -             -             piezo +
+
+*/
+
+
 #include<SoftwareSerial.h>
 #include <HX711_ADC.h>
 #include <EEPROM.h>
@@ -9,7 +29,7 @@
 HX711_ADC LoadCell(6, 7); //LoadCell(DT,SCK)
 LiquidCrystal_I2C lcd(0x27,16,2); //lcd(Address,columns,rows)
 RTC_DS3231 rtc;
-SoftwareSerial bt(3,2); //bt(RX,TX)
+SoftwareSerial bt(3,2); //bt(RX,TX)  uno(TX,RX)
 
 void timedisplay(bool);
 void Btcheck(void);
@@ -17,12 +37,13 @@ void Isalarm(void);
 void WMode(bool);
 void fullcalibrate(void);
 void changeSavedCalFactor(void);
-void BTSet_tare(void);
+void BTSet_tare(void);void Serprint(float,float);
 void BT_Calibrate(void);
 String Btgetmsg(void);
 char Btrcv_char(void);
 
 long alarm[25]={43200, 43500, 43800};
+int count = 0;
 boolean _tare = true;
 
 const int calVal_eepromAdress = 0;
@@ -104,7 +125,7 @@ void loop() {
 //  Isalarm();
   timedisplay(0);
   delay(1000);
-  WMode(0);
+//  WMode(0);
 //  delay(50);
 
 }
@@ -266,17 +287,70 @@ void Btcheck(){
       BT_RCV = Btrcv_char();
       switch(BT_RCV){
         case '*':
+        {
+          bt.println(F("Exiting System Calibration"));
           _resume = true;
           break;
+        }
         case '1':
-          //
+        {
+          bt.println(F("Type in the Alarm Time to be added in HH MM SS format:"));
+          String s;
+          s=Btgetmsg();
+          if((s.substring(2)==" ") && (s.substring(5)==" "))
+          {
+            int hr,min,sec;
+            hr=s.substring(0,1).toInt();
+            min=s.substring(3,4).toInt();
+            sec=s.substring(6,7).toInt();
+            if(count<25)
+            {
+              count++;
+              alarm[count]=((hr*3600)+(min*60)+sec);
+            }
+            else
+            {
+              bt.println(F("The maximum Alarms have reached!!!"));
+            }
+          }
+//          _resume = false;
           _resume = true;
           break;
+        }
         case '2':
-          //
+        {
+          bt.print(F("The saved Alarms are:"));
+          for(int x=0; x<=((int)(sizeof(alarm)/sizeof(alarm[0]))-1); x++)
+          {
+            bt.print((int)(alarm[x]/3600));
+            bt.print(F(":"));
+            bt.print((int)((alarm[x]/60)%60));
+            bt.print(F(":"));
+            bt.print((int)((alarm[x]%60)));
+            bt.print("\n");
+          }
+          bt.println(F("Type the ordinal number of the Alarm to be deleted"));
+          int n=0;
+          while(bt.available()>0)
+          {
+            n=(int)(bt.parseInt());
+            if(n>0)
+            {
+              _resume = true;
+              break;
+            }
+          }
+          for(int i=n-1;i<count;i++)
+          {
+            alarm[i]=alarm[i+1];
+            count--;
+          }
+//          _resume = false;
           _resume = true;
           break;
+        }
         case '3':
+        {
           bt.print(F("The saved Alarms are:"));
           for(int x=0; x<=((int)(sizeof(alarm)/sizeof(alarm[0]))-1); x++){
             bt.print((int)(alarm[x]/3600));
@@ -287,21 +361,30 @@ void Btcheck(){
           }
           _resume = true;
           break;
+        }
         case '4':
+        {
           BTSet_tare();
           _resume = true;
           break;
+        }
         case '5':
+        {
           BT_Calibrate();
           _resume = true;
           break;  
+        }
         case '6':
+        {
           fullcalibrate();
           _resume = true;
           break;
+        }
         default:
+        {
           _resume = false;
           break;
+        }
                        
       }
       _resume = true;
