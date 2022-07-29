@@ -42,14 +42,15 @@ void BT_Calibrate(void);
 String Btgetmsg(void);
 char Btrcv_char(void);
 
-long alarm[25]={43200, 43500, 43800};
-int count = 0;
+//long alarm[25]={43200, 43500, 43800,};
+long alarm[25]={21600, 21720, 21840,};
+int count = 3;
 boolean _tare = true;
 
 const int calVal_eepromAdress = 0;
 unsigned long t = 0;
 
-const long msg_timeout = 5;
+const long msg_timeout = 3;
 long counter = 0;
 
 const int WTrigger = 1000;
@@ -75,8 +76,8 @@ void setup() {
   }
   if (rtc.lostPower()) {
     Serial.println(F("RTC lost power, setting the system time!"));
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));  //implicit setting
-    // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0)); // explicit setting (YYYY,MM,DD,HR,MIN,SEC)
+//    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));  //implicit setting
+     rtc.adjust(DateTime(2014, 1, 21, 05, 59, 00)); // explicit setting (YYYY,MM,DD,HR,MIN,SEC)
   }
 
     
@@ -91,12 +92,19 @@ void setup() {
     while (1);
   }
   else {
-    LoadCell.setCalFactor(1.0);
+    LoadCell.setCalFactor(20.0);
     Serial.println(F("Startup of Load cell is complete"));
   }
   while (!LoadCell.update());
-  if(EEPROM.read(calVal_eepromAdress) != 0){    //Should be ==
-    fullcalibrate();
+  if(EEPROM.read(calVal_eepromAdress) == 0){    //Should be ==
+//    fullcalibrate();
+    #if defined(ESP8266)|| defined(ESP32)
+        EEPROM.begin(512);
+    #endif
+            EEPROM.put(0, 20.0);
+    #if defined(ESP8266)|| defined(ESP32)
+            EEPROM.commit();
+    #endif
     }
 
 
@@ -122,11 +130,11 @@ void loop() {
   }
   timedisplay(1);
   delay(1000);
-//  Isalarm();
+  Isalarm();
   timedisplay(0);
   delay(1000);
-//  WMode(0);
-//  delay(50);
+  WMode(1);
+  delay(500);
 
 }
 
@@ -197,7 +205,7 @@ void Isalarm(){
   Serial.println(TimeCurr);
   for(int i =0; i<=((int)(sizeof(alarm)/sizeof(alarm[0]))-1); i++)
   {
-    if((alarm[i]-2)<=TimeCurr && (alarm[i]-2)>TimeCurr)   // window of 4 seconds
+    if((alarm[i]+2)>=TimeCurr && (alarm[i]-2)<TimeCurr)   // window of 4 seconds
     {    
       lcd.clear();
       lcd.setCursor(0,0);
@@ -205,8 +213,21 @@ void Isalarm(){
       lcd.setCursor(0,1);
       lcd.print(F("    THE SCALE    "));
       long t_start = millis();
-      while(LoadCell.getData() <= W_Ala_off)
+      bool _resume = false;
+      float weightget = 0;
+      while(_resume == false)
       {
+        LoadCell.update();
+        weightget = LoadCell.getData(); 
+        if(weightget >= W_Ala_off){
+          _resume = true;
+        }
+        delay(300);
+        LoadCell.update();
+        weightget = LoadCell.getData(); 
+        if(weightget >= W_Ala_off){
+          _resume = true;
+        }
         if(millis()-t_start <= Freq_change_delay)
         {
           for (int thisNote = 0; thisNote < 8; thisNote++) 
@@ -234,8 +255,9 @@ void WMode(boolean avg_mode){
   uint8_t counter = 0;
   if(avg_mode){
     long t_start = millis();
-    while(millis() - t_start < 150){
-      wsample = LoadCell.getData();
+    while(millis() - t_start < 500){
+      LoadCell.update();
+      wsample = LoadCell.getData() + wsample;
       counter = counter +1;
       delay(3);
     }
@@ -244,6 +266,7 @@ void WMode(boolean avg_mode){
   else{
     wsample = LoadCell.getData();
   }
+  Serial.println(wsample);
   if(wsample>=WTrigger){
     Serial.print(F("Entering Weighing Mode"));
     lcd.clear();
@@ -257,6 +280,7 @@ void WMode(boolean avg_mode){
     lcd.print(F("KG = "));
     while(1){
       lcd.setCursor(7,1);
+      LoadCell.update();
       float i = LoadCell.getData();
       lcd.print(i/1000);
       Serial.print(F("Measured Weight = "));
@@ -282,10 +306,14 @@ void Btcheck(){
     bt.println(F("To Add A New Calibration Value, type '5'"));
     bt.println(F("To Perform Full Calibration, type '6'"));
     bt.println(F("To Exit this calibration, type '*'"));
-    while (_resume == false) {
+//    bt.println(F("Send the option within 5 seconds"));
+//    delay(5000);
+    while (_resume == false) 
+    {
       BT_RCV = '#';
       BT_RCV = Btrcv_char();
-      switch(BT_RCV){
+      switch(BT_RCV)
+      {
         case '*':
         {
           bt.println(F("Exiting System Calibration"));
@@ -296,22 +324,34 @@ void Btcheck(){
         {
           bt.println(F("Type in the Alarm Time to be added in HH MM SS format:"));
           String s;
-          s=Btgetmsg();
-          if((s.substring(2)==" ") && (s.substring(5)==" "))
+          while(_resume == false)
           {
-            int hr,min,sec;
-            hr=s.substring(0,1).toInt();
-            min=s.substring(3,4).toInt();
-            sec=s.substring(6,7).toInt();
-            if(count<25)
+            s=Btgetmsg();
+            if((s.substring(2,3)==":") && (s.substring(5,6)==":"))
             {
-              count++;
-              alarm[count]=((hr*3600)+(min*60)+sec);
+              int hr,min,sec;
+              hr=s.substring(0,1).toInt();
+              min=s.substring(3,4).toInt();
+              sec=s.substring(6,7).toInt();
+              Serial.print(hr);
+              Serial.print(min);
+              Serial.print(sec);
+              if(count<25)
+              {
+                count++;
+                alarm[count]=((hr*3600)+(min*60)+sec);
+              }
+              else
+              {
+                bt.println(F("The maximum Alarms have reached!!!"));
+              }
+              _resume = true;
             }
-            else
-            {
-              bt.println(F("The maximum Alarms have reached!!!"));
+            else{
+              bt.println(F("Please type in the proper format"));
+              delay(8000);
             }
+            s="";
           }
 //          _resume = false;
           _resume = true;
@@ -322,6 +362,9 @@ void Btcheck(){
           bt.print(F("The saved Alarms are:"));
           for(int x=0; x<=((int)(sizeof(alarm)/sizeof(alarm[0]))-1); x++)
           {
+            if(alarm[x] == 0){
+              break;
+            }
             bt.print((int)(alarm[x]/3600));
             bt.print(F(":"));
             bt.print((int)((alarm[x]/60)%60));
@@ -331,13 +374,17 @@ void Btcheck(){
           }
           bt.println(F("Type the ordinal number of the Alarm to be deleted"));
           int n=0;
-          while(bt.available()>0)
+          _resume = false;
+          while(_resume == false)
           {
-            n=(int)(bt.parseInt());
-            if(n>0)
+            while(bt.available()>0)
             {
-              _resume = true;
-              break;
+              n=(int)(bt.parseInt());
+              if(n>0)
+              {
+                _resume = true;
+//                break;
+              }
             }
           }
           for(int i=n-1;i<count;i++)
@@ -351,13 +398,16 @@ void Btcheck(){
         }
         case '3':
         {
-          bt.print(F("The saved Alarms are:"));
+          bt.println(F("The saved Alarms are:"));
           for(int x=0; x<=((int)(sizeof(alarm)/sizeof(alarm[0]))-1); x++){
+            if(alarm[x] == 0){
+              break;
+            }
             bt.print((int)(alarm[x]/3600));
             bt.print(F(":"));
             bt.print((int)((alarm[x]/60)%60));
             bt.print(F(":"));
-            bt.print((int)((alarm[x]%60)));
+            bt.println((int)((alarm[x]%60)));
           }
           _resume = true;
           break;
@@ -387,7 +437,7 @@ void Btcheck(){
         }
                        
       }
-      _resume = true;
+//      _resume = false;
     }
   }
 }
@@ -459,6 +509,7 @@ void BTSet_tare(){
       bt.println(F("Bluetooth Tare complete"));
       lcd.setCursor(0,1);
       lcd.print(F("    COMPLETE  "));
+      _resume = true;
       delay(1000);
     }
   }
@@ -478,7 +529,7 @@ void BT_Calibrate(){
   while (_resume == false) {
     LoadCell.update();
     if (bt.available() > 0) {
-      known_mass = Serial.parseFloat();
+      known_mass = bt.parseFloat(); //Serial.parseFloat();
       if (known_mass != 0) {
         bt.print(F("Known mass is: "));
         bt.println(known_mass);
@@ -607,7 +658,7 @@ void fullcalibrate() {
   }
 
   Serial.println(F("End calibration"));
-  lcd.setCursor(6,1);
+  lcd.setCursor(6,0);
   lcd.print(F("END"));
   lcd.setCursor(2,1);
   lcd.print(F("CALIBRATION"));
