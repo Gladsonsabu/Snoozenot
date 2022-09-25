@@ -43,7 +43,7 @@ String Btgetmsg(void);
 char Btrcv_char(void);
 
 //long alarm[25]={43200, 43500, 43800,};
-long alarm[25]={21600, 21720, 21840,};
+uint32_t alarm[25]={50860, 50120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 int count = 3;
 boolean _tare = true;
 
